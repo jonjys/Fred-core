@@ -1,68 +1,163 @@
 <!DOCTYPE html>
-<html>
+<html lang="sv">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Fred Core</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#000000">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+      padding: 20px; 
+      background: #000; 
+      color: #fff; 
+      line-height: 1.6;
+    }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    p { opacity: 0.7; margin-bottom: 20px; }
+    button { 
+      background: #fff; 
+      color: #000; 
+      border: none; 
+      padding: 14px 20px; 
+      font-size: 16px; 
+      font-weight: 600; 
+      border-radius: 8px; 
+      width: 100%;
+      margin-bottom: 20px;
+      cursor: pointer;
+    }
+    button:active { opacity: 0.8; }
+    #log { 
+      background: #111; 
+      border: 1px solid #333; 
+      border-radius: 8px; 
+      padding: 12px; 
+      font-size: 13px; 
+      font-family: monospace;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    #log p { margin: 4px 0; opacity: 1; }
+    .ok { color: #0f0; }
+    .err { color: #f44; }
+    .info { color: #0af; }
+  </style>
 </head>
 <body>
   <h1>Fred Core v1</h1>
-  <p>Dela till denna PWA från CapCut/Swish för att testa.</p>
+  <p>Dela hit från CapCut, YouTube eller Swish för att testa tunneln.</p>
+  
+  <button id="testBtn">Test: Skicka YouTube manuellt</button>
+  
   <div id="log"></div>
+
   <script type="module">
-    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
 
-    const SUPABASE_URL = 'https://DIN_URL.supabase.co' // BYT UT
-    const SUPABASE_ANON = 'DIN_ANON_KEY' // BYT UT
+    // BYT UT DESSA 2 RADER MED DINA VÄRDEN FRÅN VERCEL
+    const SUPABASE_URL = 'Klistra_NEXT_PUBLIC_SUPABASE_URL_här'
+    const SUPABASE_ANON = 'Klistra_SUPABASE_ANON_KEY_här'
+    
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON)
+    
+    const logEl = document.getElementById('log')
+    const log = (msg, cls = 'info') => {
+      const time = new Date().toLocaleTimeString('sv-SE')
+      logEl.innerHTML += `<p class="${cls}">${time}: ${msg}</p>`
+      logEl.scrollTop = logEl.scrollHeight
+    }
 
-    const log = (msg) => document.getElementById('log').innerHTML += `<p>${msg}</p>`
+    async function saveAtom(source, atom_type, payload) {
+      log(`Sparar ${source}/${atom_type}...`, 'info')
+      
+      const { data, error } = await supabase.from('fred_atoms').insert({
+        user_id: 'jonas',
+        source: source,
+        atom_type: atom_type,
+        payload: payload
+      }).select().single()
 
-    // Lyssna på share target
-    window.addEventListener('DOMContentLoaded', async () => {
-      const params = new URLSearchParams(window.location.search)
-      const sharedTitle = params.get('title')
-      const sharedText = params.get('text')
-      const sharedUrl = params.get('url')
+      if (error) {
+        log(`Fel: ${error.message}`, 'err')
+        console.error(error)
+        return null
+      } else {
+        log(`✅ Sparad i fred_atoms. ID: ${data.id.slice(0,8)}`, 'ok')
+        return data
+      }
+    }
 
-      if (sharedText || sharedUrl) {
-        const content = `${sharedTitle} ${sharedText} ${sharedUrl}`
-        log('Mottaget: ' + content)
-
-        // Enkel router direkt i frontend
-        let payload = { raw: content }
-        let source = 'unknown'
-        let type = 'text'
-
-        if (content.includes('youtu')) {
-          source = 'capcut'
-          type = 'video'
-          payload = { url: content.match(/https?:\/\/[^\s]+/)?.[0] }
-        } else if (content.match(/swish|kr|07\d{8}/i)) {
-          source = 'swish'
-          type = 'payment'
-          payload = {
-            amount: content.match(/(\d+[,.]?\d*)\s?kr/i)?.[1],
-            phone: content.match(/(07\d-?\d{3}\s?\d{2}\s?\d{2})/)?.[0]
-          }
+    function parseShare(text) {
+      if (!text || !text.trim()) return null
+      
+      // YouTube
+      const ytMatch = text.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/)
+      if (ytMatch) {
+        const url = text.match(/https?:\/\/[^\s]+/)?.[0]
+        return { 
+          source: 'capcut', 
+          atom_type: 'video', 
+          payload: { url: url, videoId: ytMatch[1], raw: text } 
         }
+      }
+      
+      // Swish
+      const amount = text.match(/(\d+[,.]?\d*)\s?kr/i)?.[1]?.replace(',', '.')
+      const phone = text.match(/(07\d[\d\s-]{8,11})/)?.[0]?.replace(/[\s-]/g, '')
+      if (amount || phone) {
+        return { 
+          source: 'swish', 
+          atom_type: 'payment', 
+          payload: { amount: amount ? parseFloat(amount) : null, phone: phone, raw: text } 
+        }
+      }
 
-        // Skicka till Supabase direkt från browsern
-        const { error } = await supabase.from('atoms').insert({
-          user_id: 'TEST_USER_ID', // BYT SEN
-          source, type, payload
-        })
+      // Fallback
+      return { 
+        source: 'unknown', 
+        atom_type: 'text', 
+        payload: { raw: text } 
+      }
+    }
 
-        if (error) log('Fel: ' + error.message)
-        else log('✅ Sparad i Fred! Kolla Supabase atoms-tabell.')
+    // Hantera Web Share Target
+    window.addEventListener('DOMContentLoaded', async () => {
+      log('Fred Core startad', 'info')
+      
+      const params = new URLSearchParams(window.location.search)
+      const sharedText = `${params.get('title') || ''} ${params.get('text') || ''} ${params.get('url') || ''}`.trim()
+
+      if (sharedText) {
+        log(`Mottaget via Share: ${sharedText.slice(0,50)}...`, 'info')
+        const parsed = parseShare(sharedText)
+        if (parsed) {
+          await saveAtom(parsed.source, parsed.atom_type, parsed.payload)
+        }
+      } else {
+        log('Redo. Väntar på share eller test.', 'info')
       }
     })
 
-    // Registrera SW
+    // Manuell testknapp
+    document.getElementById('testBtn').onclick = async () => {
+      const testUrl = prompt('Klistra in YouTube-länk för test:', 'https://youtu.be/dQw4w9WgXcQ')
+      if (testUrl) {
+        log(`Testar manuellt: ${testUrl}`, 'info')
+        const parsed = parseShare(testUrl)
+        if (parsed) {
+          await saveAtom(parsed.source, parsed.atom_type, parsed.payload)
+        }
+      }
+    }
+
+    // PWA Service Worker
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js')
+      navigator.serviceWorker.register('/sw.js').catch(e => {
+        log(`SW fel: ${e.message}`, 'err')
+      })
     }
   </script>
 </body>
