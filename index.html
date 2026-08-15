@@ -17,6 +17,16 @@
     }
     h1 { font-size: 24px; margin-bottom: 8px; }
     p { opacity: 0.7; margin-bottom: 20px; }
+    input {
+      width: 100%;
+      padding: 14px;
+      font-size: 16px;
+      margin-bottom: 12px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #111;
+      color: #fff;
+    }
     button { 
       background: #fff; 
       color: #000; 
@@ -50,16 +60,17 @@
   <h1>Fred Core v1</h1>
   <p>Dela hit från CapCut, YouTube eller Swish för att testa tunneln.</p>
   
-  <button id="testBtn">Test: Skicka YouTube manuellt</button>
+  <input id="urlInput" placeholder="Klistra YouTube-länk här" type="text">
+  <button id="testBtn">Skicka till Fred</button>
   
   <div id="log"></div>
 
   <script type="module">
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
 
-    // BYT UT DESSA 2 RADER MED DINA VÄRDEN FRÅN VERCEL
-    const SUPABASE_URL = 'sb_publishable_eGdp7qo4HM-MkNp3D-Yn0A_8j0N4wTU'
-    const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhieHlncWtud3l5aW9ocmtkd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwMjUwMjUsImV4cCI6MjEwMTYwMTAyNX0.2X8F5nSebxr3nQ4DEJlMKkFNoSS2GNjUP_41tyBcBSY'
+    // DINA RIKTIGA VÄRDEN - DU SA BYT SEN SÅ KÖR
+    const SUPABASE_URL = 'https://xbxigqknwiyiohrkdwbr.supabase.co'
+    const SUPABASE_ANON = 'sb_publishable_eGdp7qo4HM-MkNp3D-Yn0A_8j0N4wTU'
     
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON)
     
@@ -93,7 +104,6 @@
     function parseShare(text) {
       if (!text || !text.trim()) return null
       
-      // YouTube
       const ytMatch = text.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/)
       if (ytMatch) {
         const url = text.match(/https?:\/\/[^\s]+/)?.[0]
@@ -104,7 +114,6 @@
         }
       }
       
-      // Swish
       const amount = text.match(/(\d+[,.]?\d*)\s?kr/i)?.[1]?.replace(',', '.')
       const phone = text.match(/(07\d[\d\s-]{8,11})/)?.[0]?.replace(/[\s-]/g, '')
       if (amount || phone) {
@@ -115,7 +124,6 @@
         }
       }
 
-      // Fallback
       return { 
         source: 'unknown', 
         atom_type: 'text', 
@@ -123,7 +131,6 @@
       }
     }
 
-    // Hantera Web Share Target
     window.addEventListener('DOMContentLoaded', async () => {
       log('Fred Core startad', 'info')
       
@@ -141,19 +148,19 @@
       }
     })
 
-    // Manuell testknapp
     document.getElementById('testBtn').onclick = async () => {
-      const testUrl = prompt('Klistra in YouTube-länk för test:', 'https://youtu.be/dQw4w9WgXcQ')
-      if (testUrl) {
-        log(`Testar manuellt: ${testUrl}`, 'info')
-        const parsed = parseShare(testUrl)
-        if (parsed) {
-          await saveAtom(parsed.source, parsed.atom_type, parsed.payload)
-        }
+      const val = document.getElementById('urlInput').value
+      if (!val) { 
+        log('Klistra in en länk först', 'err') 
+        return 
+      }
+      log(`Testar: ${val}`, 'info')
+      const parsed = parseShare(val)
+      if (parsed) {
+        await saveAtom(parsed.source, parsed.atom_type, parsed.payload)
       }
     }
 
-    // PWA Service Worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(e => {
         log(`SW fel: ${e.message}`, 'err')
