@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fred Core</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#000000">
+</head>
+<body>
+  <h1>Fred Core v1</h1>
+  <p>Dela till denna PWA från CapCut/Swish för att testa.</p>
+  <div id="log"></div>
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+
+    const SUPABASE_URL = 'https://DIN_URL.supabase.co' // BYT UT
+    const SUPABASE_ANON = 'DIN_ANON_KEY' // BYT UT
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON)
+
+    const log = (msg) => document.getElementById('log').innerHTML += `<p>${msg}</p>`
+
+    // Lyssna på share target
+    window.addEventListener('DOMContentLoaded', async () => {
+      const params = new URLSearchParams(window.location.search)
+      const sharedTitle = params.get('title')
+      const sharedText = params.get('text')
+      const sharedUrl = params.get('url')
+
+      if (sharedText || sharedUrl) {
+        const content = `${sharedTitle} ${sharedText} ${sharedUrl}`
+        log('Mottaget: ' + content)
+
+        // Enkel router direkt i frontend
+        let payload = { raw: content }
+        let source = 'unknown'
+        let type = 'text'
+
+        if (content.includes('youtu')) {
+          source = 'capcut'
+          type = 'video'
+          payload = { url: content.match(/https?:\/\/[^\s]+/)?.[0] }
+        } else if (content.match(/swish|kr|07\d{8}/i)) {
+          source = 'swish'
+          type = 'payment'
+          payload = {
+            amount: content.match(/(\d+[,.]?\d*)\s?kr/i)?.[1],
+            phone: content.match(/(07\d-?\d{3}\s?\d{2}\s?\d{2})/)?.[0]
+          }
+        }
+
+        // Skicka till Supabase direkt från browsern
+        const { error } = await supabase.from('atoms').insert({
+          user_id: 'TEST_USER_ID', // BYT SEN
+          source, type, payload
+        })
+
+        if (error) log('Fel: ' + error.message)
+        else log('✅ Sparad i Fred! Kolla Supabase atoms-tabell.')
+      }
+    })
+
+    // Registrera SW
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+    }
+  </script>
+</body>
+</html>
